@@ -10,6 +10,7 @@ public class CachedRoomRepository : IRoomRepository
 {
     private readonly IRoomRepository _inner;
     private readonly Dictionary<string, Room> _cache = new();
+    private readonly Dictionary<string, List<Room>> _availabilityCache = new();
 
     public CachedRoomRepository(IRoomRepository inner)
     {
@@ -30,13 +31,36 @@ public class CachedRoomRepository : IRoomRepository
 
     public List<Room> GetAvailableRooms(DateTime from, DateTime to)
     {
-        // BUG: Returns cached data, ignores date parameters, potentially stale
-        return _cache.Values.Where(r => r.IsAvailable).ToList();
+        var key = BuildKey(from, to);
+        if (_availabilityCache.TryGetValue(key, out var cachedRooms))
+            return cachedRooms.Select(CloneRoom).ToList();
+
+        var freshRooms = _inner.GetAvailableRooms(from, to);
+        _availabilityCache[key] = freshRooms.Select(CloneRoom).ToList();
+        return freshRooms;
     }
 
     public void Save(Room room)
     {
         _inner.Save(room);
-        // BUG: Forgets to invalidate cache -> GetAvailableRooms returns stale data
+        _cache.Remove(room.Id);
+        _availabilityCache.Clear();
+    }
+
+    private static string BuildKey(DateTime from, DateTime to)
+    {
+        return $"{from:yyyyMMdd}-{to:yyyyMMdd}";
+    }
+
+    private static Room CloneRoom(Room room)
+    {
+        return new Room
+        {
+            Id = room.Id,
+            Type = room.Type,
+            MaxGuests = room.MaxGuests,
+            PricePerNight = room.PricePerNight,
+            IsAvailable = room.IsAvailable
+        };
     }
 }

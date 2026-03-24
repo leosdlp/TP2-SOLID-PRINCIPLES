@@ -1,6 +1,10 @@
 namespace HotelReservation.Interfaces;
 
-public class NotificationService : INotificationService
+public class NotificationService :
+    IEmailNotificationService,
+    ISmsNotificationService,
+    IPushNotificationService,
+    ISlackNotificationService
 {
     public void SendEmail(string to, string subject, string body)
     {

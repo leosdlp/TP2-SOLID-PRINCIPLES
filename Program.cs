@@ -86,12 +86,22 @@ var bobForBilling = new Reservation
     RoomType = "Suite",
     Status = "CheckedOut"
 };
-var invoice = invoiceGenerator.Generate(bobForBilling);
-invoiceGenerator.PrintInvoice(invoice, bobForBilling);
+var invoiceRequest = new InvoiceRequest
+{
+    ReservationId = bobForBilling.Id,
+    GuestName = bobForBilling.GuestName,
+    RoomId = bobForBilling.RoomId,
+    RoomType = bobForBilling.RoomType,
+    CheckIn = bobForBilling.CheckIn,
+    CheckOut = bobForBilling.CheckOut,
+    GuestCount = bobForBilling.GuestCount
+};
+var invoice = invoiceGenerator.Generate(invoiceRequest);
+invoiceGenerator.PrintInvoice(invoice, invoiceRequest);
 Console.WriteLine();
 
 // ---------------------------------------------------------------
-// Scenario 6: Housekeeping Schedule (uses Reservation.GetLinenChangeDays — SRP violation)
+// Scenario 6: Housekeeping Schedule (HousekeepingScheduler)
 // ---------------------------------------------------------------
 Console.WriteLine("--- Scenario 6: Housekeeping Schedule ---");
 var bobForHousekeeping = new Reservation
@@ -104,11 +114,6 @@ var bobForHousekeeping = new Reservation
     GuestCount = 2,
     RoomType = "Suite"
 };
-var bobLinenDays = bobForHousekeeping.GetLinenChangeDays();
-Console.WriteLine($"Linen change schedule for Bob Dupont (Room 201, 15/06 -> 22/06):");
-foreach (var day in bobLinenDays)
-    Console.WriteLine($"  - {day:dd/MM/yyyy}");
-
 var durandForHousekeeping = new Reservation
 {
     Id = id3,
@@ -119,7 +124,13 @@ var durandForHousekeeping = new Reservation
     GuestCount = 4,
     RoomType = "Family"
 };
-var durandLinenDays = durandForHousekeeping.GetLinenChangeDays();
+var scheduler = new HousekeepingScheduler();
+var bobLinenDays = scheduler.GetLinenChangeDays(bobForHousekeeping);
+Console.WriteLine($"Linen change schedule for Bob Dupont (Room 201, 15/06 -> 22/06):");
+foreach (var day in bobLinenDays)
+    Console.WriteLine($"  - {day:dd/MM/yyyy}");
+
+var durandLinenDays = scheduler.GetLinenChangeDays(durandForHousekeeping);
 Console.WriteLine($"Cleaning tasks for Famille Durand (Room 301, 20/06 -> 25/06):");
 foreach (var day in durandLinenDays)
     Console.WriteLine($"  - {day:dd/MM/yyyy}");
@@ -169,25 +180,18 @@ Console.WriteLine();
 // Scenario 9: LSP Violation Demo
 // ---------------------------------------------------------------
 Console.WriteLine("--- Scenario 9: LSP Violation Demo ---");
-ICancellable flexibleRes = new FlexibleReservation
+ICancellableReservation flexibleRes = new FlexibleReservation
 {
     Id = "FLEX-001", GuestName = "Test Flexible", TotalPrice = 200m
 };
 flexibleRes.Cancel();
 Console.WriteLine($"[OK] Flexible reservation cancelled, refund: {flexibleRes.CalculateRefund():F2} EUR");
 
-ICancellable nonRefundableRes = new NonRefundableReservation
+IReservation nonRefundableRes = new NonRefundableReservation
 {
     Id = "NR-001", GuestName = "Test NonRefundable", TotalPrice = 200m
 };
-try
-{
-    nonRefundableRes.Cancel(); // This will throw!
-}
-catch (InvalidOperationException ex)
-{
-    Console.WriteLine($"[ERROR] LSP violation: {ex.Message}");
-}
+Console.WriteLine("[INFO] Non-refundable reservations cannot be cancelled at compile time");
 Console.WriteLine();
 
 Console.WriteLine("=== End of Demo ===");

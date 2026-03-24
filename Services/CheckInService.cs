@@ -2,52 +2,88 @@ namespace HotelReservation.Services;
 
 using HotelReservation.Models;
 
-// SRP VIOLATION (Example 2): A single method mixes multiple levels of abstraction.
-// High-level business rules sit next to low-level cache manipulation and config reading.
 public class CheckInService
 {
-    private readonly Dictionary<string, CacheEntry> _cache = new();
-    private readonly Dictionary<string, Reservation> _dataStore;
+    private readonly ReservationStatusCache _statusCache = new();
+    private readonly LateCheckInFeePolicy _lateFeePolicy = new(25m);
+    private readonly RoomOccupancyNotifier _notifier = new();
 
     public CheckInService(Dictionary<string, Reservation> dataStore)
     {
-        _dataStore = dataStore;
+        // dataStore kept for backwards compatibility in Program but no longer directly used here
     }
 
     public void ProcessCheckIn(Reservation reservation)
     {
-        // HIGH LEVEL: business rule
-        if (reservation.Status != "Confirmed")
-            throw new Exception($"Cannot check in: reservation is {reservation.Status}");
-
-        // LOW LEVEL: cache manipulation
-        if (_cache.ContainsKey(reservation.Id))
-            _cache.Remove(reservation.Id);
-        _cache[reservation.Id] = new CacheEntry(DateTime.Now, "CheckedIn");
-
-        // HIGH LEVEL: late check-in fee logic
-        var lateCheckInFee = 25m; // Hardcoded, should come from config
-        if (DateTime.Now.Hour >= 22)
-            reservation.TotalPrice += lateCheckInFee;
-
-        // LOW LEVEL: direct state mutation
+        EnsureConfirmed(reservation);
+        _statusCache.Update(reservation.Id, "CheckedIn");
+        _lateFeePolicy.Apply(reservation, DateTime.Now);
         reservation.Status = "CheckedIn";
-
-        // LOW LEVEL: direct notification
-        Console.WriteLine($"[SMS] Room {reservation.RoomId} is now occupied");
+        _notifier.NotifyOccupied(reservation.RoomId);
     }
 
     public void ProcessCheckOut(Reservation reservation)
     {
+        EnsureCheckedIn(reservation);
+        reservation.Status = "CheckedOut";
+        _statusCache.Remove(reservation.Id);
+        _notifier.NotifyVacated(reservation.RoomId);
+    }
+
+    private static void EnsureConfirmed(Reservation reservation)
+    {
+        if (reservation.Status != "Confirmed")
+            throw new Exception($"Cannot check in: reservation is {reservation.Status}");
+    }
+
+    private static void EnsureCheckedIn(Reservation reservation)
+    {
         if (reservation.Status != "CheckedIn")
             throw new Exception($"Cannot check out: reservation is {reservation.Status}");
+    }
+}
 
-        reservation.Status = "CheckedOut";
+internal class ReservationStatusCache
+{
+    private readonly Dictionary<string, CacheEntry> _cache = new();
 
-        // LOW LEVEL: cache cleanup
-        if (_cache.ContainsKey(reservation.Id))
-            _cache.Remove(reservation.Id);
+    public void Update(string reservationId, string status)
+    {
+        _cache[reservationId] = new CacheEntry(DateTime.Now, status);
+    }
 
-        Console.WriteLine($"[SMS] Room {reservation.RoomId} is now free");
+    public void Remove(string reservationId)
+    {
+        if (_cache.ContainsKey(reservationId))
+            _cache.Remove(reservationId);
+    }
+}
+
+internal class LateCheckInFeePolicy
+{
+    private readonly decimal _lateFee;
+
+    public LateCheckInFeePolicy(decimal lateFee)
+    {
+        _lateFee = lateFee;
+    }
+
+    public void Apply(Reservation reservation, DateTime now)
+    {
+        if (now.Hour >= 22)
+            reservation.TotalPrice += _lateFee;
+    }
+}
+
+internal class RoomOccupancyNotifier
+{
+    public void NotifyOccupied(string roomId)
+    {
+        Console.WriteLine($"[SMS] Room {roomId} is now occupied");
+    }
+
+    public void NotifyVacated(string roomId)
+    {
+        Console.WriteLine($"[SMS] Room {roomId} is now free");
     }
 }
